@@ -1,7 +1,7 @@
-from app.database.database import engine, Base
+from app.database.database import engine, Base, init_db
 from app.database import models
 
-Base.metadata.create_all(bind=engine)
+init_db()
 
 print("Sahayak database created successfully.")
 print("Database tables:")

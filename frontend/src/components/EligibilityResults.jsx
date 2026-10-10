@@ -5,7 +5,13 @@ export function EligibilityResults({ ruleConfig, extractedFields, documents }) {
 
   // 1. Income rule check
   const incomeField = extractedFields.find((f) => f.field_name === 'income')
-  const hasIncomeDoc = documents.some((d) => d.detected_type === 'income_certificate')
+  const hasIncomeDoc = documents.some(
+    (d) =>
+      (d.detected_type === 'income_certificate' || d.expected_type === 'income_certificate') &&
+      d.verification_status !== 'DOCUMENT_TYPE_MISMATCH' &&
+      d.classification_status !== 'MISMATCH' &&
+      d.verification_status !== 'UNREADABLE'
+  )
   let incomeStatus = 'PENDING'
   let incomeExtractedDisplay = 'Not yet uploaded'
 
@@ -26,7 +32,14 @@ export function EligibilityResults({ ruleConfig, extractedFields, documents }) {
   // 2. Academic percentage rule check
   const percentageField = extractedFields.find((f) => f.field_name === 'percentage')
   const hasMarksheetDoc = documents.some(
-    (d) => d.detected_type === 'marksheet_12th' || d.detected_type === 'marksheet_10th'
+    (d) =>
+      (d.detected_type === 'marksheet_12th' ||
+        d.detected_type === 'marksheet_10th' ||
+        d.expected_type === 'marksheet_12th' ||
+        d.expected_type === 'marksheet_10th') &&
+      d.verification_status !== 'DOCUMENT_TYPE_MISMATCH' &&
+      d.classification_status !== 'MISMATCH' &&
+      d.verification_status !== 'UNREADABLE'
   )
   let marksStatus = 'PENDING'
   let marksExtractedDisplay = 'Not yet uploaded'
@@ -47,8 +60,23 @@ export function EligibilityResults({ ruleConfig, extractedFields, documents }) {
 
   // 3. Document Completeness rule check
   const requiredDocs = ruleConfig.required_documents || []
-  const uploadedDetectedTypes = new Set(documents.map((d) => d.detected_type))
-  const missingDocs = requiredDocs.filter((req) => !uploadedDetectedTypes.has(req))
+  // Only documents verified or matching their slot count as satisfied
+  const satisfiedTypes = new Set(
+    documents
+      .filter(
+        (d) =>
+          d.verification_status !== 'DOCUMENT_TYPE_MISMATCH' &&
+          d.classification_status !== 'MISMATCH' &&
+          d.verification_status !== 'UNREADABLE' &&
+          d.verification_status !== 'UNKNOWN_DOCUMENT'
+      )
+      .map((d) =>
+        d.expected_type && (d.classification_status === 'MATCH' || d.verification_status === 'VERIFIED')
+          ? d.expected_type
+          : d.detected_type
+      )
+  )
+  const missingDocs = requiredDocs.filter((req) => !satisfiedTypes.has(req))
   const docsStatus = missingDocs.length === 0 && requiredDocs.length > 0 ? 'PASSED' : 'PENDING'
 
   return (

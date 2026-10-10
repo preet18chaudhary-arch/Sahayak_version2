@@ -11,7 +11,25 @@ class DocumentType(str, Enum):
     CASTE_CERTIFICATE = "caste_certificate"
     DOMICILE_CERTIFICATE = "domicile_certificate"
     BANK_PASSBOOK = "bank_passbook"
+    PAN_CARD = "pan_card"
+    ITR_COMPUTATION = "itr_computation"
+    ITR_ACKNOWLEDGEMENT = "itr_acknowledgement"
+    UNKNOWN = "unknown"
     OTHER = "other"
+
+
+class ClassificationStatus(str, Enum):
+    MATCH = "MATCH"
+    MISMATCH = "MISMATCH"
+    UNKNOWN = "UNKNOWN"
+    UNREADABLE = "UNREADABLE"
+
+
+class DocumentVerificationStatus(str, Enum):
+    VERIFIED = "VERIFIED"
+    DOCUMENT_TYPE_MISMATCH = "DOCUMENT_TYPE_MISMATCH"
+    UNKNOWN_DOCUMENT = "UNKNOWN_DOCUMENT"
+    UNREADABLE = "UNREADABLE"
 
 
 class MatchingThresholds(BaseModel):
@@ -106,7 +124,26 @@ class UploadedDocumentMetadata(BaseModel):
     doc_id: str
     file_name: str
     detected_type: Optional[DocumentType] = None
+    expected_type: Optional[DocumentType] = None
+    classification_status: Optional[str] = None
+    verification_status: Optional[str] = None
+    message: Optional[str] = None
     uploaded_at: str
+
+
+class DocumentUploadResponse(BaseModel):
+    """API response returned when a document is uploaded and evaluated."""
+    session_id: str
+    file_name: str
+    doc_id: str
+    expected_document_type: Optional[str] = None
+    detected_document_type: Optional[str] = None
+    detected_type: Optional[str] = None
+    classification_status: str
+    verification_status: str
+    message: str
+    fields: dict = {}
+    extracted_text: str = ""
 
 
 class VerificationSession(BaseModel):

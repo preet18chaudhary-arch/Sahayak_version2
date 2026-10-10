@@ -51,6 +51,10 @@ class DocumentModel(Base):
     )
     file_name: Mapped[str] = mapped_column(String(255))
     detected_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    expected_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    classification_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    verification_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)
     uploaded_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=lambda: datetime.now(timezone.utc),

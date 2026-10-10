@@ -27,6 +27,11 @@ from app.models.schemas import (
 class DatabaseSessionStore:
     """Persistent session store backed by SQLite."""
 
+    def __init__(self):
+        from app.database.database import init_db
+        init_db()
+        self._cache: dict = {}
+
     def create_session(
         self,
         student_name: Optional[str],
@@ -63,6 +68,8 @@ class DatabaseSessionStore:
             created_at=now.isoformat(),
         )
 
+        self._cache[session_id] = session
+
         db = SessionLocal()
 
         try:
@@ -94,6 +101,9 @@ class DatabaseSessionStore:
         session_id: str,
     ) -> Optional[VerificationSession]:
 
+        if session_id in self._cache:
+            return self._cache[session_id]
+
         db = SessionLocal()
 
         try:
@@ -106,7 +116,9 @@ class DatabaseSessionStore:
             if db_session is None:
                 return None
 
-            return self._to_schema(db, db_session)
+            session = self._to_schema(db, db_session)
+            self._cache[session_id] = session
+            return session
 
         finally:
             db.close()
@@ -126,21 +138,32 @@ class DatabaseSessionStore:
             )
 
             if db_session is None:
-                raise ValueError(
-                    f"Session {session.session_id} does not exist"
+                db_session = SessionModel(
+                    session_id=session.session_id,
+                    student_name=session.student_name,
+                    scholarship_id=session.rule_config.scholarship_id,
+                    rule_config=json.dumps(
+                        session.rule_config.model_dump(),
+                        default=str,
+                    ),
+                    readiness=json.dumps(
+                        session.readiness.model_dump(),
+                        default=str,
+                    ),
+                    created_at=datetime.now(timezone.utc),
                 )
-
-            db_session.student_name = session.student_name
-
-            db_session.rule_config = json.dumps(
-                session.rule_config.model_dump(),
-                default=str,
-            )
-
-            db_session.readiness = json.dumps(
-                session.readiness.model_dump(),
-                default=str,
-            )
+                db.add(db_session)
+                db.flush()
+            else:
+                db_session.student_name = session.student_name
+                db_session.rule_config = json.dumps(
+                    session.rule_config.model_dump(),
+                    default=str,
+                )
+                db_session.readiness = json.dumps(
+                    session.readiness.model_dump(),
+                    default=str,
+                )
 
             # Remove old child records.
             db.query(DocumentModel).filter(
@@ -176,8 +199,12 @@ class DatabaseSessionStore:
                     except ValueError:
                         uploaded_at = datetime.now(timezone.utc)
 
-                if uploaded_at is None:
-                    uploaded_at = datetime.now(timezone.utc)
+                expected_type = None
+                if document.expected_type is not None:
+                    if hasattr(document.expected_type, "value"):
+                        expected_type = document.expected_type.value
+                    else:
+                        expected_type = str(document.expected_type)
 
                 db.add(
                     DocumentModel(
@@ -185,6 +212,10 @@ class DatabaseSessionStore:
                         session_id=session.session_id,
                         file_name=document.file_name,
                         detected_type=detected_type,
+                        expected_type=expected_type,
+                        classification_status=document.classification_status,
+                        verification_status=document.verification_status,
+                        message=document.message,
                         uploaded_at=uploaded_at,
                     )
                 )
@@ -234,6 +265,7 @@ class DatabaseSessionStore:
                 )
 
             db.commit()
+            self._cache[session.session_id] = session
 
             return session
 
@@ -288,22 +320,30 @@ class DatabaseSessionStore:
         ).all()
 
         documents = []
-
         for document in db_documents:
-
             detected_type = None
-
             if document.detected_type:
                 try:
                     detected_type = DocumentType(document.detected_type)
                 except ValueError:
                     detected_type = None
 
+            expected_type = None
+            if getattr(document, "expected_type", None):
+                try:
+                    expected_type = DocumentType(document.expected_type)
+                except ValueError:
+                    expected_type = None
+
             documents.append(
                 UploadedDocumentMetadata(
                     doc_id=document.doc_id,
                     file_name=document.file_name,
                     detected_type=detected_type,
+                    expected_type=expected_type,
+                    classification_status=getattr(document, "classification_status", None),
+                    verification_status=getattr(document, "verification_status", None),
+                    message=getattr(document, "message", None),
                     uploaded_at=document.uploaded_at.isoformat(),
                 )
             )

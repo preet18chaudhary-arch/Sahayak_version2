@@ -1,12 +1,22 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes import router as api_router
 from app.config import CORS_ORIGINS, PROJECT_NAME, VERSION
+from app.database.database import init_db
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    yield
+
 
 # Initialize FastAPI application
 app = FastAPI(
     title=PROJECT_NAME,
     version=VERSION,
+    lifespan=lifespan,
     description=(
         "Sahayak: AI-assisted scholarship document verification platform.\n\n"
         "Follows the **INPUT → UNDERSTAND → VERIFY → ACT** paradigm with "

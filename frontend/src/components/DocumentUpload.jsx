@@ -1,5 +1,8 @@
 import { useRef, useState } from 'react'
-import { formatDocumentType } from '../utils/formatters'
+import {
+  DOCUMENT_TYPE_LABELS,
+  formatDocumentType,
+} from '../utils/formatters'
 
 export function DocumentUpload({
   onUploadFiles,
@@ -7,8 +10,10 @@ export function DocumentUpload({
   uploadProgress,
   lastUploadResult,
   error,
+  ruleConfig,
 }) {
   const [selectedFiles, setSelectedFiles] = useState([])
+  const [targetSlot, setTargetSlot] = useState('')
   const [isDragging, setIsDragging] = useState(false)
   const fileInputRef = useRef(null)
 
@@ -53,7 +58,8 @@ export function DocumentUpload({
   const handleTriggerUpload = async () => {
     if (selectedFiles.length === 0 || uploading) return
     const filesToUpload = [...selectedFiles]
-    const success = await onUploadFiles(filesToUpload)
+    const chosenSlot = targetSlot ? targetSlot : null
+    const success = await onUploadFiles(filesToUpload, chosenSlot)
     if (success) {
       setSelectedFiles([])
       if (fileInputRef.current) {
@@ -62,15 +68,63 @@ export function DocumentUpload({
     }
   }
 
+  // Determine slot options
+  const requiredDocs = ruleConfig?.required_documents || []
+  const otherCommonSlots = Object.keys(DOCUMENT_TYPE_LABELS).filter(
+    (key) =>
+      !requiredDocs.includes(key) &&
+      key !== 'unknown' &&
+      key !== 'other' &&
+      key !== 'itr_computation' &&
+      key !== 'itr_acknowledgement'
+  )
+
   return (
     <section className="dashboard-card upload-section-card">
       <div className="section-card-header">
         <div>
           <h3>Upload Scholarship Documents</h3>
           <p className="section-card-subtitle">
-            Upload Aadhaar, 12th Marksheet, and Income Certificate. You can select multiple files.
+            Upload PDF (text or scanned) or image files (PNG, JPG, JPEG, WEBP). Max 15MB each.
           </p>
         </div>
+      </div>
+
+      {/* Target Slot Selection */}
+      <div className="target-slot-selector-row">
+        <label htmlFor="slot-select" className="slot-select-label">
+          Target Document Slot (Optional):
+        </label>
+        <select
+          id="slot-select"
+          className="slot-select-dropdown"
+          value={targetSlot}
+          onChange={(e) => setTargetSlot(e.target.value)}
+          disabled={uploading}
+        >
+          <option value="">Auto-Detect Document Type (General Upload)</option>
+          {requiredDocs.length > 0 && (
+            <optgroup label="Mandatory Scheme Documents">
+              {requiredDocs.map((docType) => (
+                <option key={docType} value={docType}>
+                  ★ {formatDocumentType(docType)} (Required)
+                </option>
+              ))}
+            </optgroup>
+          )}
+          <optgroup label="Other Standard Documents">
+            {otherCommonSlots.map((docType) => (
+              <option key={docType} value={docType}>
+                {formatDocumentType(docType)}
+              </option>
+            ))}
+          </optgroup>
+        </select>
+        <small className="slot-select-hint">
+          {targetSlot
+            ? `Uploading as "${formatDocumentType(targetSlot)}". The engine will verify document type matches this slot.`
+            : 'Engine will automatically identify and categorize the uploaded file.'}
+        </small>
       </div>
 
       <div
@@ -95,7 +149,7 @@ export function DocumentUpload({
           {uploading ? 'Processing documents...' : 'Click to browse or drag & drop files here'}
         </p>
         <span className="dropzone-hint">
-          Supports PNG, JPG, JPEG, and PDF (Max 15MB each)
+          Supports PDF (both text and scanned) and PNG, JPG, JPEG, WEBP (Max 15MB per file)
         </span>
       </div>
 
@@ -152,6 +206,8 @@ export function DocumentUpload({
             >
               {uploading
                 ? `Uploading ${uploadProgress.current} of ${uploadProgress.total}...`
+                : targetSlot
+                ? `Upload to "${formatDocumentType(targetSlot)}" Slot`
                 : `Upload & Verify ${selectedFiles.length} Document${selectedFiles.length > 1 ? 's' : ''}`}
             </button>
           </div>
@@ -178,17 +234,88 @@ export function DocumentUpload({
         </div>
       )}
 
-      {lastUploadResult && !uploading && (
-        <div className="upload-success-banner">
-          <span className="banner-check">✓</span>
-          <div>
-            <strong>Document Processed: {lastUploadResult.file_name}</strong>
-            <p>
-              Classified as: <strong>{formatDocumentType(lastUploadResult.detected_type)}</strong>
-            </p>
+      {/* Upload Feedback Banners */}
+      {lastUploadResult && !uploading && (() => {
+        const isMismatch =
+          lastUploadResult.verification_status === 'DOCUMENT_TYPE_MISMATCH' ||
+          lastUploadResult.classification_status === 'MISMATCH'
+        const isUnreadable =
+          lastUploadResult.verification_status === 'UNREADABLE'
+        const isUnknown =
+          lastUploadResult.verification_status === 'UNKNOWN_DOCUMENT' ||
+          lastUploadResult.detected_type === 'unknown'
+
+        if (isMismatch) {
+          return (
+            <div className="mismatch-alert-box">
+              <div className="alert-icon">⚠</div>
+              <div className="alert-content">
+                <strong>Document Type Mismatch</strong>
+                <p>
+                  You uploaded <em>{lastUploadResult.file_name}</em> into the{' '}
+                  <strong>{formatDocumentType(lastUploadResult.expected_type)}</strong> slot,
+                  but it was detected as <strong>{formatDocumentType(lastUploadResult.detected_type)}</strong>.
+                </p>
+                <div className="alert-action-guidance">
+                  {lastUploadResult.message ||
+                    `Please upload a valid ${formatDocumentType(lastUploadResult.expected_type)} to fulfill this requirement.`}
+                </div>
+              </div>
+            </div>
+          )
+        }
+
+        if (isUnreadable) {
+          return (
+            <div className="unreadable-alert-box">
+              <div className="alert-icon">✕</div>
+              <div className="alert-content">
+                <strong>Document Unreadable</strong>
+                <p>
+                  We could not extract readable text from <em>{lastUploadResult.file_name}</em>.
+                </p>
+                <div className="alert-action-guidance">
+                  {lastUploadResult.message ||
+                    'Please upload a clearer scan, a high-resolution image, or a valid PDF document.'}
+                </div>
+              </div>
+            </div>
+          )
+        }
+
+        if (isUnknown) {
+          return (
+            <div className="unknown-alert-box">
+              <div className="alert-icon">?</div>
+              <div className="alert-content">
+                <strong>Unrecognized Document</strong>
+                <p>
+                  The engine could not identify <em>{lastUploadResult.file_name}</em> as a recognized scholarship document.
+                </p>
+                <div className="alert-action-guidance">
+                  {lastUploadResult.message ||
+                    'Please verify the file contains visible headers such as Aadhaar, Marksheet, or Income Certificate.'}
+                </div>
+              </div>
+            </div>
+          )
+        }
+
+        return (
+          <div className="upload-success-banner">
+            <span className="banner-check">✓</span>
+            <div>
+              <strong>Document Processed: {lastUploadResult.file_name}</strong>
+              <p>
+                Verified as: <strong>{formatDocumentType(lastUploadResult.detected_type)}</strong>
+                {lastUploadResult.expected_type && (
+                  <span> (Slot: {formatDocumentType(lastUploadResult.expected_type)})</span>
+                )}
+              </p>
+            </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {error && <div className="error-banner">{error}</div>}
     </section>

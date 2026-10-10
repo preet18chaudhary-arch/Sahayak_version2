@@ -262,12 +262,20 @@ def check_eligibility_rules(session) -> tuple[bool, list[str]]:
 
 
 def run_name_verification(session) -> None:
-    """Run document consistency and scholarship eligibility checks."""
+    """Run document consistency, document slot matching, and scholarship eligibility checks."""
 
+    # Retain only valid resolved discrepancies whose documents are still in the session
+    current_doc_types = {
+        (doc.detected_type.value if hasattr(doc.detected_type, "value") else str(doc.detected_type))
+        for doc in session.documents
+        if doc.detected_type is not None
+    }
     resolved_discrepancies = [
         discrepancy
         for discrepancy in session.discrepancies
         if discrepancy.resolved
+        and (discrepancy.doc_a_type.value if hasattr(discrepancy.doc_a_type, "value") else str(discrepancy.doc_a_type)) in current_doc_types
+        and (discrepancy.doc_b_type.value if hasattr(discrepancy.doc_b_type, "value") else str(discrepancy.doc_b_type)) in current_doc_types
     ]
 
     session.discrepancies = resolved_discrepancies
@@ -289,15 +297,6 @@ def run_name_verification(session) -> None:
 
     session.readiness.potential_mismatches = len(unresolved_mismatches)
 
-    missing_documents = session.readiness.required_documents_missing
-
-    if missing_documents:
-        session.readiness.overall_status = ReadinessStatus.INCOMPLETE
-        session.readiness.status_message = (
-            "Some required documents are still missing."
-        )
-        return
-
     action_required_mismatches = [
         discrepancy
         for discrepancy in unresolved_mismatches
@@ -316,24 +315,80 @@ def run_name_verification(session) -> None:
         )
     ]
 
+    # Calculate verified document types (mismatched, unreadable, or unknown documents NEVER satisfy a slot)
+    verified_types = set()
+    mismatched_docs = []
+
+    for doc in session.documents:
+        v_status = getattr(doc, "verification_status", None)
+        c_status = getattr(doc, "classification_status", None)
+
+        if v_status == "DOCUMENT_TYPE_MISMATCH" or c_status == "MISMATCH":
+            mismatched_docs.append(doc)
+            continue
+        elif v_status == "UNREADABLE" or c_status == "UNREADABLE":
+            continue
+        elif v_status == "UNKNOWN_DOCUMENT" or (doc.detected_type and getattr(doc.detected_type, "value", str(doc.detected_type)) in ("unknown", "other")):
+            continue
+
+        # Verified or legacy match
+        slot_type = doc.expected_type or doc.detected_type
+        if slot_type:
+            val = slot_type.value if hasattr(slot_type, "value") else str(slot_type)
+            verified_types.add(val)
+        if doc.detected_type:
+            val = doc.detected_type.value if hasattr(doc.detected_type, "value") else str(doc.detected_type)
+            verified_types.add(val)
+
+    session.readiness.required_documents_missing = [
+        (doc_type.value if hasattr(doc_type, "value") else str(doc_type))
+        for doc_type in session.rule_config.required_documents
+        if (doc_type.value if hasattr(doc_type, "value") else str(doc_type)) not in verified_types
+    ]
+
+    missing_documents = session.readiness.required_documents_missing
+
+    # 1. Document type mismatches take high precedence
+    if mismatched_docs:
+        session.readiness.overall_status = ReadinessStatus.ACTION_REQUIRED
+        mismatch_reasons = [
+            doc.message for doc in mismatched_docs if getattr(doc, "message", None)
+        ]
+        if not mismatch_reasons:
+            mismatch_reasons = ["Document type mismatch detected. Please upload the required document type."]
+        if missing_documents:
+            mismatch_reasons.append(f"Required documents missing: {', '.join(missing_documents)}.")
+        session.readiness.status_message = " ".join(mismatch_reasons)
+        return
+
+    # 2. Eligibility checks
     if not eligible:
         session.readiness.overall_status = ReadinessStatus.ACTION_REQUIRED
-
         reasons = list(eligibility_reasons)
-
+        if missing_documents:
+            reasons.append(
+                f"Some required documents are still missing: {', '.join(missing_documents)}."
+            )
         if action_required_mismatches:
             reasons.append(
                 f"{len(action_required_mismatches)} document mismatch(es) require action."
             )
-
         if review_required_mismatches:
             reasons.append(
                 f"{len(review_required_mismatches)} document mismatch(es) require human review."
             )
-
         session.readiness.status_message = " ".join(reasons)
         return
 
+    # 3. Missing documents
+    if missing_documents:
+        session.readiness.overall_status = ReadinessStatus.INCOMPLETE
+        session.readiness.status_message = (
+            f"Some required documents are still missing: {', '.join(missing_documents)}."
+        )
+        return
+
+    # 4. Action required discrepancies
     if action_required_mismatches:
         session.readiness.overall_status = ReadinessStatus.ACTION_REQUIRED
         session.readiness.status_message = (
@@ -341,6 +396,7 @@ def run_name_verification(session) -> None:
         )
         return
 
+    # 5. Review required discrepancies
     if review_required_mismatches:
         session.readiness.overall_status = ReadinessStatus.IN_REVIEW
         session.readiness.status_message = (
@@ -348,6 +404,7 @@ def run_name_verification(session) -> None:
         )
         return
 
+    # 6. Ready for submission
     session.readiness.overall_status = ReadinessStatus.READY_FOR_SUBMISSION
     session.readiness.status_message = (
         "All required documents are present, extracted information is "

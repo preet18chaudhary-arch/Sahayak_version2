@@ -6,12 +6,17 @@ export const DOCUMENT_TYPE_LABELS = {
   caste_certificate: 'Caste Certificate',
   domicile_certificate: 'Domicile Certificate',
   bank_passbook: 'Bank Passbook',
+  pan_card: 'PAN Card',
+  itr_computation: 'ITR Computation',
+  itr_acknowledgement: 'ITR Acknowledgement',
+  unknown: 'Unknown Document',
   other: 'Other Document',
 }
 
 export function formatDocumentType(type) {
   if (!type) return 'Unknown Document'
-  return DOCUMENT_TYPE_LABELS[type] || type.replace(/_/g, ' ')
+  const key = String(type).toLowerCase()
+  return DOCUMENT_TYPE_LABELS[key] || type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
 export const FIELD_NAME_LABELS = {
@@ -76,6 +81,36 @@ export function getStatusBadgeClass(status) {
       return 'badge-neutral'
     default:
       return 'badge-neutral'
+  }
+}
+
+export function formatVerificationStatus(status) {
+  switch (status) {
+    case 'VERIFIED':
+      return 'Verified'
+    case 'DOCUMENT_TYPE_MISMATCH':
+      return 'Wrong Document Type'
+    case 'UNKNOWN_DOCUMENT':
+      return 'Unrecognized Document'
+    case 'UNREADABLE':
+      return 'Unreadable Document'
+    default:
+      return status || 'Pending'
+  }
+}
+
+export function getVerificationStatusBadge(status) {
+  switch (status) {
+    case 'VERIFIED':
+      return { label: 'Verified', className: 'tag-green', icon: '✓' }
+    case 'DOCUMENT_TYPE_MISMATCH':
+      return { label: 'Type Mismatch', className: 'tag-red', icon: '⚠' }
+    case 'UNKNOWN_DOCUMENT':
+      return { label: 'Unrecognized', className: 'tag-orange', icon: '?' }
+    case 'UNREADABLE':
+      return { label: 'Unreadable', className: 'tag-red', icon: '✕' }
+    default:
+      return { label: status || 'Pending', className: 'tag-neutral', icon: '•' }
   }
 }
 

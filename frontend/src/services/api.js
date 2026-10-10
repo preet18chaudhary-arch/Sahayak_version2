@@ -1,4 +1,6 @@
-const API_BASE_URL = 'http://127.0.0.1:8001'
+const API_BASE_URL =
+  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_BASE_URL) ||
+  'http://127.0.0.1:8001'
 
 /**
  * Helper to handle fetch responses and extract error details
@@ -52,9 +54,15 @@ export async function getSession(sessionId) {
   return handleResponse(response, `Could not retrieve session ${sessionId}.`)
 }
 
-export async function uploadSingleDocument(sessionId, file) {
+export async function uploadSingleDocument(sessionId, file, expectedType = null, docId = null) {
   const formData = new FormData()
   formData.append('file', file)
+  if (expectedType) {
+    formData.append('expected_type', expectedType)
+  }
+  if (docId) {
+    formData.append('doc_id', docId)
+  }
 
   const response = await fetch(
     `${API_BASE_URL}/api/sessions/${sessionId}/documents/upload`,
@@ -64,6 +72,16 @@ export async function uploadSingleDocument(sessionId, file) {
     }
   )
   return handleResponse(response, `Upload failed for ${file.name}.`)
+}
+
+export async function deleteDocument(sessionId, docId) {
+  const response = await fetch(
+    `${API_BASE_URL}/api/sessions/${sessionId}/documents/${docId}`,
+    {
+      method: 'DELETE',
+    }
+  )
+  return handleResponse(response, `Could not remove document ${docId}.`)
 }
 
 export async function resolveDiscrepancy(sessionId, discrepancyId, resolutionNote) {

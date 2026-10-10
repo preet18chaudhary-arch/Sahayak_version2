@@ -8,6 +8,7 @@ import { VerificationDashboard } from './components/VerificationDashboard'
 
 import {
   createSession,
+  deleteDocument,
   getScholarships,
   getSession,
   resolveDiscrepancy,
@@ -40,6 +41,7 @@ function App() {
   })
   const [lastUploadResult, setLastUploadResult] = useState(null)
   const [uploadError, setUploadError] = useState('')
+  const [deletingDocId, setDeletingDocId] = useState(null)
 
   // Discrepancy resolution state
   const [resolvingId, setResolvingId] = useState(null)
@@ -127,7 +129,7 @@ function App() {
   }
 
   // Upload multiple documents sequentially to the real backend upload endpoint
-  async function handleUploadFiles(files) {
+  async function handleUploadFiles(files, targetSlot = null) {
     if (!session || files.length === 0) return false
 
     setUploading(true)
@@ -144,10 +146,11 @@ function App() {
           currentFileName: file.name,
         })
 
-        // Call real backend upload endpoint
+        // Call real backend upload endpoint with targetSlot if provided
         const uploadResult = await uploadSingleDocument(
           session.session_id,
-          file
+          file,
+          targetSlot
         )
 
         setLastUploadResult(uploadResult)
@@ -174,6 +177,64 @@ function App() {
       return false
     } finally {
       setUploading(false)
+    }
+  }
+
+  // Upload or replace a document in a specific slot
+  async function handleUploadSlot(docType, file) {
+    if (!session || !file) return false
+
+    setUploading(true)
+    setUploadError('')
+    setLastUploadResult(null)
+    setUploadProgress({
+      current: 1,
+      total: 1,
+      currentFileName: file.name,
+    })
+
+    try {
+      const uploadResult = await uploadSingleDocument(
+        session.session_id,
+        file,
+        docType
+      )
+      setLastUploadResult(uploadResult)
+
+      const refreshed = await getSession(session.session_id)
+      setSession(refreshed)
+      return true
+    } catch (err) {
+      setUploadError(err.message || `Upload failed for ${file.name}.`)
+      try {
+        const refreshed = await getSession(session.session_id)
+        setSession(refreshed)
+      } catch {
+        // Ignore
+      }
+      return false
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  // Delete a document from the session
+  async function handleDeleteDocument(docId) {
+    if (!session || !docId) return false
+
+    setDeletingDocId(docId)
+    setUploadError('')
+
+    try {
+      await deleteDocument(session.session_id, docId)
+      const refreshed = await getSession(session.session_id)
+      setSession(refreshed)
+      return true
+    } catch (err) {
+      setUploadError(err.message || `Failed to remove document ${docId}.`)
+      return false
+    } finally {
+      setDeletingDocId(null)
     }
   }
 
@@ -217,6 +278,7 @@ function App() {
     setError('')
     setUploadError('')
     setLastUploadResult(null)
+    setDeletingDocId(null)
   }
 
   // Show login page before the main application
@@ -253,6 +315,9 @@ function App() {
         <VerificationDashboard
           session={session}
           onUploadFiles={handleUploadFiles}
+          onUploadSlot={handleUploadSlot}
+          onDeleteDocument={handleDeleteDocument}
+          deletingDocId={deletingDocId}
           uploading={uploading}
           uploadProgress={uploadProgress}
           lastUploadResult={lastUploadResult}

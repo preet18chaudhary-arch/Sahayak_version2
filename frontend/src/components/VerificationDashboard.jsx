@@ -11,6 +11,9 @@ import { formatStatusLabel, getStatusBadgeClass } from '../utils/formatters'
 export function VerificationDashboard({
   session,
   onUploadFiles,
+  onUploadSlot,
+  onDeleteDocument,
+  deletingDocId,
   uploading,
   uploadProgress,
   lastUploadResult,
@@ -21,7 +24,15 @@ export function VerificationDashboard({
 }) {
   if (!session) return null
 
-  const { student_name, session_id, rule_config, documents, extracted_fields, discrepancies, readiness } = session
+  const {
+    student_name,
+    session_id,
+    rule_config,
+    documents,
+    extracted_fields,
+    discrepancies,
+    readiness,
+  } = session
   const badgeClass = getStatusBadgeClass(readiness?.overall_status)
   const statusLabel = formatStatusLabel(readiness?.overall_status)
 
@@ -71,7 +82,7 @@ export function VerificationDashboard({
           {rule_config.income_ceiling && (
             <div className="criteria-item">
               <span className="criteria-label">Income Ceiling:</span>
-              <strong>₹{(rule_config.income_ceiling).toLocaleString('en-IN')} / year</strong>
+              <strong>₹{rule_config.income_ceiling.toLocaleString('en-IN')} / year</strong>
             </div>
           )}
           {rule_config.min_academic_percentage && (
@@ -83,7 +94,8 @@ export function VerificationDashboard({
           <div className="criteria-item">
             <span className="criteria-label">Fuzzy Matching:</span>
             <strong>
-              {Math.round(rule_config.matching_thresholds.human_review_threshold * 100)}% Review / {Math.round(rule_config.matching_thresholds.auto_approve_threshold * 100)}% Auto
+              {Math.round(rule_config.matching_thresholds.human_review_threshold * 100)}% Review /{' '}
+              {Math.round(rule_config.matching_thresholds.auto_approve_threshold * 100)}% Auto
             </strong>
           </div>
         </div>
@@ -93,6 +105,8 @@ export function VerificationDashboard({
       <RequiredDocuments
         ruleConfig={rule_config}
         uploadedDocuments={documents || []}
+        onUploadSlot={onUploadSlot}
+        uploading={uploading}
       />
 
       {/* Step 3: Document Upload Dropzone */}
@@ -102,10 +116,15 @@ export function VerificationDashboard({
         uploadProgress={uploadProgress}
         lastUploadResult={lastUploadResult}
         error={uploadError}
+        ruleConfig={rule_config}
       />
 
       {/* Step 4: Uploaded Documents Table */}
-      <UploadedDocuments documents={documents || []} />
+      <UploadedDocuments
+        documents={documents || []}
+        onDeleteDocument={onDeleteDocument}
+        deletingDocId={deletingDocId}
+      />
 
       {/* Step 5: Extracted Fields Grid */}
       <ExtractedFields
